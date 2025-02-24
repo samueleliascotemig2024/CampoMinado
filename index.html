@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Campo Minado 8x8</title>
     <style>
         body {
@@ -11,32 +11,36 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             background: linear-gradient(135deg, #e0e0e0, #a0a0a0);
+            touch-action: manipulation;
         }
 
         .board {
             display: grid;
-            gap: 3px;
+            gap: 2px;
             background: #333;
-            padding: 10px;
-            border-radius: 15px;
+            padding: 5px;
+            border-radius: 10px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-width: 90vw;
+            max-height: 50vh;
+            margin: 0 auto;
         }
 
         .cell {
-            width: 40px;
-            height: 40px;
+            width: clamp(25px, 8vw, 40px);
+            height: clamp(25px, 8vw, 40px);
             background: #777;
-            border: 2px solid #555;
+            border: 1px solid #555;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             user-select: none;
             transition: all 0.2s ease;
-            font-size: 18px;
+            font-size: clamp(12px, 3vw, 18px);
         }
 
         .cell:hover {
@@ -62,24 +66,27 @@
         .game-over { color: #ff4444; }
         .win { color: #4CAF50; }
         .game-over, .win {
-            font-size: 28px;
+            font-size: clamp(20px, 5vw, 28px);
             font-weight: bold;
             text-align: center;
-            margin: 15px 0;
+            margin: 10px 0;
             text-shadow: 1px 1px 3px rgba(0,0,0,0.2);
         }
 
         .controls {
-            margin: 20px 0;
+            margin: 15px 0;
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
+            justify-content: center;
+            width: 90%;
         }
 
         .button {
-            padding: 10px 20px;
+            padding: clamp(8px, 2vw, 10px) clamp(15px, 3vw, 20px);
             background-color: #4CAF50;
             color: white;
-            font-size: 16px;
+            font-size: clamp(14px, 2.5vw, 16px);
             border: none;
             border-radius: 5px;
             cursor: pointer;
@@ -92,16 +99,39 @@
             cursor: not-allowed;
         }
 
+        .flag-mode {
+            background-color: #ffcc00;
+            color: black;
+        }
+
         select {
-            padding: 10px;
-            font-size: 16px;
+            padding: clamp(8px, 2vw, 10px);
+            font-size: clamp(14px, 2.5vw, 16px);
             border-radius: 5px;
+            max-width: 100%;
         }
 
         .hint {
-            font-size: 18px;
+            font-size: clamp(14px, 2.5vw, 18px);
             color: #222;
             margin: 10px 0;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: clamp(24px, 6vw, 36px);
+            margin: 10px 0;
+        }
+
+        @media (max-width: 600px) {
+            .board {
+                gap: 1px;
+                padding: 3px;
+            }
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
         }
     </style>
 </head>
@@ -120,6 +150,7 @@
             <option value="hard">Difícil (12x12, 35 minas)</option>
         </select>
         <button id="resetButton" class="button" onclick="resetGame()">Reiniciar</button>
+        <button id="flagToggle" class="button" onclick="toggleFlagMode()">Modo Bandeira</button>
     </div>
 
     <script>
@@ -131,6 +162,7 @@
         let gameOver = false;
         let firstClick = true;
         let minesLeft = MINES;
+        let isFlagMode = false;
 
         function setDifficulty() {
             const difficulty = document.getElementById('difficulty').value;
@@ -148,7 +180,7 @@
                     MINES = 35;
                     break;
             }
-            document.getElementById('board').style.gridTemplateColumns = `repeat(${SIZE}, 40px)`;
+            document.getElementById('board').style.gridTemplateColumns = `repeat(${SIZE}, clamp(25px, 8vw, 40px))`;
             minesLeft = MINES;
         }
 
@@ -196,8 +228,14 @@
                     cell.className = 'cell';
                     cell.dataset.x = i;
                     cell.dataset.y = j;
+                    
+                    // Desktop events
                     cell.addEventListener('click', handleClick);
                     cell.addEventListener('contextmenu', handleRightClick);
+                    
+                    // Mobile touch events
+                    cell.addEventListener('touchstart', handleTouch);
+                    
                     boardElement.appendChild(cell);
                 }
             }
@@ -205,23 +243,61 @@
 
         function handleClick(e) {
             if (gameOver) return;
+            e.preventDefault();
             const x = parseInt(e.target.dataset.x);
             const y = parseInt(e.target.dataset.y);
+            handleCellAction(x, y);
+        }
+
+        function handleTouch(e) {
+            if (gameOver) return;
+            e.preventDefault();
+            const x = parseInt(e.target.dataset.x);
+            const y = parseInt(e.target.dataset.y);
+            handleCellAction(x, y);
+        }
+
+        function handleCellAction(x, y) {
             const key = `${x},${y}`;
-
-            if (flagged.has(key)) return;
-
-            if (firstClick) {
-                firstClick = false;
-                while (board[x][y] === -1) {
-                    initializeBoard(); // Garante que o primeiro clique não seja uma mina
+            if (isFlagMode) {
+                if (revealed.has(key)) return;
+                toggleFlag(x, y);
+            } else {
+                if (flagged.has(key)) return;
+                if (firstClick) {
+                    firstClick = false;
+                    while (board[x][y] === -1) {
+                        initializeBoard();
+                    }
+                    revealRandomArea(x, y);
                 }
-                revealRandomArea(x, y);
+                revealCell(x, y);
             }
-
-            revealCell(x, y);
             updateDisplay();
             checkWin();
+        }
+
+        function toggleFlag(x, y) {
+            const key = `${x},${y}`;
+            if (flagged.has(key)) {
+                flagged.delete(key);
+                minesLeft++;
+            } else if (flagged.size < MINES) {
+                flagged.add(key);
+                minesLeft--;
+            }
+        }
+
+        function toggleFlagMode() {
+            isFlagMode = !isFlagMode;
+            const flagButton = document.getElementById('flagToggle');
+            if (isFlagMode) {
+                flagButton.classList.add('flag-mode');
+                flagButton.textContent = 'Modo Revelar';
+            } else {
+                flagButton.classList.remove('flag-mode');
+                flagButton.textContent = 'Modo Bandeira';
+            }
         }
 
         function revealRandomArea(x, y) {
@@ -274,20 +350,9 @@
         function handleRightClick(e) {
             e.preventDefault();
             if (gameOver) return;
-
             const x = parseInt(e.target.dataset.x);
             const y = parseInt(e.target.dataset.y);
-            const key = `${x},${y}`;
-
-            if (revealed.has(key)) return;
-
-            if (flagged.has(key)) {
-                flagged.delete(key);
-                minesLeft++;
-            } else if (flagged.size < MINES) { // Limita o número de bandeiras
-                flagged.add(key);
-                minesLeft--;
-            }
+            toggleFlag(x, y);
             updateDisplay();
         }
 
@@ -349,15 +414,19 @@
             flagged.clear();
             gameOver = false;
             firstClick = true;
+            isFlagMode = false;
             setDifficulty();
             document.getElementById('gameStatus').textContent = '';
             document.getElementById('resetButton').disabled = false;
+            const flagButton = document.getElementById('flagToggle');
+            flagButton.classList.remove('flag-mode');
+            flagButton.textContent = 'Modo Bandeira';
             initializeBoard();
             createBoard();
             updateDisplay();
         }
 
-        resetGame(); // Inicia o jogo
+        resetGame();
     </script>
 </body>
 </html>
